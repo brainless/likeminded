@@ -1,0 +1,31 @@
+[workspace]
+members = [
+    "likeminded-core",
+    "reddit-client", 
+    "llm-interface",
+    "embedding-engine",
+    "database",
+    "gui",
+    "background-service"
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Likeminded Contributors"]
+license = "MIT"
+repository = "https://github.com/brainless/likeminded"
+
+[package]
+name = "likeminded"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+likeminded-core = { path = "likeminded-core" }
+gui = { path = "gui" }
+background-service = { path = "background-service" }
+tokio = { version = "1.0", features = ["full"] }

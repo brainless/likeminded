@@ -1,0 +1,10 @@
+[package]
+name = "embedding-engine"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+likeminded-core = { path = "../likeminded-core" }

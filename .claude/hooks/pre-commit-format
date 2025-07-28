@@ -1,0 +1,19 @@
+#!/bin/bash
+
+# Claude Code Hook: Pre-commit Rust formatting check
+# This hook runs cargo fmt --check before commits to ensure code is properly formatted
+
+set -e
+
+echo "🔍 Running Rust formatting check..."
+
+# Check if cargo fmt would make changes
+if ! cargo fmt --check; then
+    echo "❌ Code formatting issues found!"
+    echo "💡 Run 'cargo fmt' to fix formatting issues before committing."
+    echo "   Or use 'git commit --no-verify' to bypass this check."
+    exit 1
+fi
+
+echo "✅ All Rust code is properly formatted!"
+exit 0

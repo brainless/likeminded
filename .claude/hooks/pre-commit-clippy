@@ -1,0 +1,24 @@
+#!/bin/bash
+
+# Claude Code Hook: Pre-commit Rust linting check  
+# This hook runs cargo clippy before commits to ensure code quality
+
+set -e
+
+echo "🔍 Running Rust linting with Clippy..."
+
+# Run clippy with warnings as errors for stricter checks
+if ! cargo clippy --all-targets --all-features -- -D warnings; then
+    echo "❌ Clippy found linting issues!"
+    echo "💡 Fix the linting issues shown above before committing."
+    echo "   Or use 'git commit --no-verify' to bypass this check."
+    echo ""
+    echo "   Common solutions:"
+    echo "   - Remove unused variables/imports"
+    echo "   - Fix suggested code improvements"
+    echo "   - Add #[allow(clippy::specific_lint)] if intentional"
+    exit 1
+fi
+
+echo "✅ All Rust code passes Clippy linting!"
+exit 0

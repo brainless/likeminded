@@ -38,7 +38,19 @@ Cross-platform Rust GUI application using Iced framework to filter Reddit posts 
 - System tray integration
 
 ## Development Commands
-*Add project-specific commands here as they're established*
+- `cargo fmt` - Format code
+- `cargo clippy` - Run linter
+- `cargo test` - Run tests
+- `cargo check` - Quick compile check
+- `cargo build` - Build project
+
+## Claude Code Hooks
+Pre-commit hooks are configured in `.claude/hooks/` to ensure code quality:
+- `pre-commit-format` - Runs `cargo fmt --check` to ensure proper formatting
+- `pre-commit-clippy` - Runs `cargo clippy` with warnings as errors for code quality
+- `pre-commit-test` - Runs `cargo test` to ensure all tests pass
+
+Use `git commit --no-verify` to bypass hooks if needed during development.
 
 ## Notes
 - All configuration through GUI (no config files)

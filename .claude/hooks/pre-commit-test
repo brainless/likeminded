@@ -1,0 +1,19 @@
+#!/bin/bash
+
+# Claude Code Hook: Pre-commit test runner
+# This hook runs cargo test before commits to ensure all tests pass
+
+set -e
+
+echo "🧪 Running Rust tests..."
+
+# Run all tests
+if ! cargo test --all-targets --all-features; then
+    echo "❌ Tests failed!"
+    echo "💡 Fix failing tests before committing."
+    echo "   Or use 'git commit --no-verify' to bypass this check."
+    exit 1
+fi
+
+echo "✅ All tests passed!"
+exit 0

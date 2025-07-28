@@ -8,3 +8,23 @@ repository.workspace = true
 
 [dependencies]
 likeminded-core = { path = "../likeminded-core" }
+
+# Async runtime
+tokio = { workspace = true }
+
+# HTTP client
+reqwest = { workspace = true }
+
+# OAuth2 authentication
+oauth2 = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# URL handling
+url = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }

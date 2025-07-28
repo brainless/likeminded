@@ -16,6 +16,54 @@ authors = ["Likeminded Contributors"]
 license = "MIT"
 repository = "https://github.com/brainless/likeminded"
 
+# Workspace-wide dependencies for consistent versioning
+[workspace.dependencies]
+# Core async runtime
+tokio = { version = "1.0", features = ["full"] }
+
+# GUI framework
+iced = { version = "0.12", features = ["tokio", "debug"] }
+
+# Database
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite", "migrate", "chrono"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# HTTP client
+reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
+
+# OAuth2 for Reddit authentication
+oauth2 = "4.4"
+
+# Local embedding models - using candle ecosystem
+candle-core = "0.3"
+candle-nn = "0.3"
+candle-transformers = "0.3"
+tokenizers = "0.15"
+
+# Desktop notifications
+notify-rust = "4.10"
+
+# System tray integration
+tray-icon = "0.14"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# Utilities
+uuid = { version = "1.0", features = ["v4", "serde"] }
+url = "2.4"
+
 [package]
 name = "likeminded"
 version.workspace = true
@@ -28,4 +76,7 @@ repository.workspace = true
 likeminded-core = { path = "likeminded-core" }
 gui = { path = "gui" }
 background-service = { path = "background-service" }
-tokio = { version = "1.0", features = ["full"] }
+# Use workspace dependencies
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

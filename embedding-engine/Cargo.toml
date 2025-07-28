@@ -8,3 +8,22 @@ repository.workspace = true
 
 [dependencies]
 likeminded-core = { path = "../likeminded-core" }
+
+# Async runtime
+tokio = { workspace = true }
+
+# Candle ML framework
+candle-core = { workspace = true }
+candle-nn = { workspace = true }
+candle-transformers = { workspace = true }
+
+# Tokenizers
+tokenizers = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }

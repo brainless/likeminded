@@ -192,11 +192,58 @@ impl RedditClient {
         
         // Exchange code for token
         tracing::debug!("Exchanging authorization code for token");
+        
+        // Create a custom HTTP client to debug the token exchange request and add User-Agent
+        let user_agent = self.config.user_agent.clone();
+        let custom_http_client = move |mut request: oauth2::HttpRequest| {
+            let user_agent = user_agent.clone();
+            Box::pin(async move {
+                // Add User-Agent header - critical for Reddit API
+                if let Ok(header_value) = user_agent.parse() {
+                    request.headers.insert("user-agent", header_value);
+                }
+                
+                tracing::debug!("Token exchange request:");
+                tracing::debug!("  URL: {}", request.url);
+                tracing::debug!("  Method: {}", request.method);
+                tracing::debug!("  Headers: {:?}", request.headers);
+                tracing::debug!("  Body: {}", String::from_utf8_lossy(&request.body));
+                
+                let response = async_http_client(request).await;
+                
+                match &response {
+                    Ok(resp) => {
+                        tracing::debug!("Token exchange response:");
+                        tracing::debug!("  Status: {:?}", resp.status_code);
+                        tracing::debug!("  Headers: {:?}", resp.headers);
+                        tracing::debug!("  Body: {}", String::from_utf8_lossy(&resp.body));
+                        
+                        // Check if Reddit returned an error page instead of JSON
+                        if resp.status_code.as_u16() != 200 {
+                            let body_text = String::from_utf8_lossy(&resp.body);
+                            if body_text.contains("whoa there, pardner!") {
+                                tracing::error!("Reddit blocked the request - likely due to User-Agent or rate limiting");
+                                tracing::error!("Response body contains: {}", body_text);
+                            } else if body_text.starts_with("<!doctype html>") || body_text.starts_with("<html") {
+                                tracing::error!("Reddit returned HTML error page instead of JSON");
+                                tracing::error!("Status: {}, Body: {}", resp.status_code.as_u16(), body_text);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Token exchange HTTP error: {:?}", e);
+                    }
+                }
+                
+                response
+            })
+        };
+        
         let token_result = self
             .oauth_client
             .exchange_code(AuthorizationCode::new(cleaned_auth_code.to_string()))
             .set_pkce_verifier(pkce_verifier)
-            .request_async(async_http_client)
+            .request_async(custom_http_client)
             .await
             .map_err(|e| {
                 tracing::error!("Token exchange failed: {:?}", e);

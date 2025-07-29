@@ -1,11 +1,34 @@
 use reddit_client::{RedditClient, RedditOAuth2Config};
 use std::io::{self, Write};
 use tokio;
+use std::fs::File;
+use tracing_subscriber::fmt::writer::MakeWriterExt;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize tracing for logging
-    tracing_subscriber::fmt::init();
+    // Parse command line arguments
+    let args: Vec<String> = std::env::args().collect();
+    let reddit_username = if args.len() > 1 {
+        args[1].clone()
+    } else {
+        println!("❌ Usage: {} <reddit_username>", args[0]);
+        println!("   Example: {} myusername", args[0]);
+        println!("   Please provide your Reddit username for the User-Agent header");
+        return Ok(());
+    };
+
+    // Create log file
+    let log_file_path = "/tmp/reddit_client_debug.log";
+    let log_file = File::create(log_file_path)?;
+    
+    // Initialize tracing to write to both stdout and file
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stdout.and(log_file))
+        .with_max_level(tracing::Level::DEBUG)
+        .init();
+    
+    println!("📝 Debug logs will be written to: {}", log_file_path);
+    println!("👤 Using Reddit username: /u/{}", reddit_username);
 
     println!("=== Reddit API Manual Test ===\n");
 
@@ -38,12 +61,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // Create OAuth2 config
+    // Create OAuth2 config with Reddit-compliant User-Agent
+    // Format: <platform>:<app ID>:<version string> (by /u/<reddit username>)
+    let user_agent = format!("desktop:likeminded:v1.0.0 (by /u/{})", reddit_username);
+    println!("🔧 User-Agent: {}\n", user_agent);
+    
     let config = RedditOAuth2Config::new(
         client_id,
         client_secret,
         "http://localhost:8080/callback".to_string(),
-        "likeminded/1.0 test app".to_string(),
+        user_agent,
     );
 
     // Create Reddit client

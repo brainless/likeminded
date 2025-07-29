@@ -1,7 +1,7 @@
 use reddit_client::{RedditClient, RedditOAuth2Config};
+use std::fs::File;
 use std::io::{self, Write};
 use tokio;
-use std::fs::File;
 use tracing_subscriber::fmt::writer::MakeWriterExt;
 
 #[tokio::main]
@@ -20,13 +20,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create log file
     let log_file_path = "/tmp/reddit_client_debug.log";
     let log_file = File::create(log_file_path)?;
-    
+
     // Initialize tracing to write to both stdout and file
     tracing_subscriber::fmt()
         .with_writer(std::io::stdout.and(log_file))
         .with_max_level(tracing::Level::DEBUG)
         .init();
-    
+
     println!("📝 Debug logs will be written to: {}", log_file_path);
     println!("👤 Using Reddit username: /u/{}", reddit_username);
 
@@ -65,7 +65,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Format: <platform>:<app ID>:<version string> (by /u/<reddit username>)
     let user_agent = format!("desktop:likeminded:v1.0.0 (by /u/{})", reddit_username);
     println!("🔧 User-Agent: {}\n", user_agent);
-    
+
     let config = RedditOAuth2Config::new(
         client_id,
         client_secret,
@@ -78,7 +78,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Reddit client created successfully\n");
 
     // Check initial authentication state
-    println!("🔍 Initial authentication state: {:?}", client.get_auth_state());
+    println!(
+        "🔍 Initial authentication state: {:?}",
+        client.get_auth_state()
+    );
     println!("🔍 Is authenticated: {}", client.is_authenticated());
     println!("🔍 Needs refresh: {}\n", client.needs_refresh());
 
@@ -89,8 +92,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (auth_url, csrf_token) = client.generate_auth_url(&scopes)?;
     println!("🔗 Authentication URL generated:");
     println!("{}\n", auth_url);
-    
-    println!("🔍 Authentication state after URL generation: {:?}", client.get_auth_state());
+
+    println!(
+        "🔍 Authentication state after URL generation: {:?}",
+        client.get_auth_state()
+    );
     println!("🔒 CSRF Token: {}\n", csrf_token.secret());
 
     println!("📝 Instructions:");
@@ -105,12 +111,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut callback_url = String::new();
     io::stdin().read_line(&mut callback_url)?;
     let callback_url = callback_url.trim();
-    
+
     if callback_url.is_empty() {
         println!("❌ Callback URL cannot be empty");
         return Ok(());
     }
-    
+
     if !callback_url.starts_with("http://localhost:8080/callback") {
         println!("⚠️  Warning: URL doesn't look like a proper callback URL");
         println!("   Expected format: http://localhost:8080/callback?state=...&code=...");
@@ -122,7 +128,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(token) => {
             println!("✅ Authentication successful!");
             println!("🎫 Access token: {}...", &token.access_token[..20]);
-            println!("🔄 Refresh token: {:?}", token.refresh_token.as_ref().map(|t| format!("{}...", &t[..20])));
+            println!(
+                "🔄 Refresh token: {:?}",
+                token
+                    .refresh_token
+                    .as_ref()
+                    .map(|t| format!("{}...", &t[..20]))
+            );
             println!("⏰ Expires at: {:?}", token.expires_at);
             println!("📋 Scopes: {:?}\n", token.scope);
         }
@@ -158,7 +170,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(subreddits) => {
             println!("✅ Found {} subreddits:", subreddits.len());
             for (i, sub) in subreddits.iter().take(5).enumerate() {
-                println!("   {}. r/{} - {} subscribers", i + 1, sub.display_name, sub.subscribers);
+                println!(
+                    "   {}. r/{} - {} subscribers",
+                    i + 1,
+                    sub.display_name,
+                    sub.subscribers
+                );
             }
             if subreddits.len() > 5 {
                 println!("   ... and {} more\n", subreddits.len() - 5);
@@ -171,14 +188,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Test 3: Get posts from a popular subreddit
+    // Test 3: Get posts from a popular subreddit with different sorting
     let test_subreddit = "rust";
-    println!("📰 Getting posts from r/{}...", test_subreddit);
+    println!(
+        "📰 Getting posts from r/{} (default: hot)...",
+        test_subreddit
+    );
     match client.fetch_posts(test_subreddit).await {
         Ok(posts) => {
             println!("✅ Found {} posts:", posts.len());
             for (i, post) in posts.iter().take(3).enumerate() {
-                println!("   {}. {} (Score: {})", i + 1, post.title, post.url);
+                println!(
+                    "   {}. {} (Score: {}, Comments: {})",
+                    i + 1,
+                    post.title,
+                    post.score,
+                    post.num_comments
+                );
+                println!(
+                    "      Author: u/{}, Posted: {}",
+                    post.author, post.created_utc
+                );
+                println!("      URL: {}", post.url);
                 if let Some(ref content) = post.content {
                     let preview = if content.len() > 100 {
                         format!("{}...", &content[..100])
@@ -195,22 +226,137 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Test 4: Check API metrics
+    // Test 4: Get posts with different sorting options
+    println!("📰 Getting new posts from r/{}...", test_subreddit);
+    match client
+        .fetch_posts_with_options(test_subreddit, Some("new"), None, Some(5), None)
+        .await
+    {
+        Ok(posts) => {
+            println!("✅ Found {} new posts:", posts.len());
+            for (i, post) in posts.iter().enumerate() {
+                println!("   {}. {} (Score: {})", i + 1, post.title, post.score);
+                println!(
+                    "      Stickied: {}, NSFW: {}, Locked: {}",
+                    post.stickied, post.over_18, post.locked
+                );
+            }
+            println!();
+        }
+        Err(e) => {
+            println!("❌ Failed to get new posts: {}\n", e);
+        }
+    }
+
+    // Test 5: Get top posts from this week
+    println!(
+        "📰 Getting top posts from r/{} (this week)...",
+        test_subreddit
+    );
+    match client
+        .fetch_posts_with_options(test_subreddit, Some("top"), Some("week"), Some(5), None)
+        .await
+    {
+        Ok(posts) => {
+            println!("✅ Found {} top posts from this week:", posts.len());
+            for (i, post) in posts.iter().enumerate() {
+                println!("   {}. {} (Score: {})", i + 1, post.title, post.score);
+                if let Some(ratio) = post.upvote_ratio {
+                    println!("      Upvote ratio: {:.1}%", ratio * 100.0);
+                }
+            }
+            println!();
+        }
+        Err(e) => {
+            println!("❌ Failed to get top posts: {}\n", e);
+        }
+    }
+
+    // Test 6: Get posts from multiple subreddits
+    let test_subreddits = ["rust", "programming", "webdev"];
+    println!(
+        "📰 Getting posts from multiple subreddits: {:?}...",
+        test_subreddits
+    );
+    match client
+        .fetch_multiple_subreddit_posts(&test_subreddits, Some("hot"), None, Some(3), None)
+        .await
+    {
+        Ok(results) => {
+            println!("✅ Fetched from {} subreddits:", results.len());
+            for (subreddit, posts_result) in results {
+                match posts_result {
+                    Ok(posts) => {
+                        println!("   r/{}: {} posts", subreddit, posts.len());
+                        for (j, post) in posts.iter().take(2).enumerate() {
+                            println!("     {}. {} (Score: {})", j + 1, post.title, post.score);
+                        }
+                    }
+                    Err(e) => {
+                        println!("   r/{}: ❌ Error - {}", subreddit, e);
+                    }
+                }
+            }
+            println!();
+        }
+        Err(e) => {
+            println!("❌ Failed to get posts from multiple subreddits: {}\n", e);
+        }
+    }
+
+    // Test 7: Check subreddit access
+    let check_subreddits = ["rust", "nonexistent_subreddit_12345", "programming"];
+    println!("🔍 Checking subreddit access...");
+    for subreddit in check_subreddits {
+        match client.check_subreddit_access(subreddit).await {
+            Ok(accessible) => {
+                if accessible {
+                    println!("   r/{}: ✅ Accessible", subreddit);
+                } else {
+                    println!("   r/{}: ❌ Private/Restricted/Not Found", subreddit);
+                }
+            }
+            Err(e) => {
+                println!("   r/{}: ❌ Error checking access - {}", subreddit, e);
+            }
+        }
+    }
+    println!();
+
+    // Test 8: Check API metrics
     println!("📊 API Metrics:");
     let metrics = client.get_api_metrics().await;
     println!("   Total requests: {}", metrics.total_requests);
     println!("   Successful requests: {}", metrics.successful_requests);
     println!("   Failed requests: {}", metrics.failed_requests);
-    println!("   Rate limited requests: {}", metrics.rate_limited_requests);
-    println!("   Average response time: {:?}", metrics.average_response_time);
+    println!(
+        "   Rate limited requests: {}",
+        metrics.rate_limited_requests
+    );
+    println!(
+        "   Average response time: {:?}",
+        metrics.average_response_time
+    );
 
-    // Test 5: Check rate limit status
+    // Test 9: Check rate limit status
     println!("\n🚦 Rate Limit Status:");
     let rate_status = client.get_rate_limit_status().await;
-    println!("   Available tokens: {}/{}", rate_status.available_tokens, rate_status.max_tokens);
-    println!("   Available permits: {}/{}", rate_status.available_permits, rate_status.max_permits);
-    println!("   Requests per minute: {}", rate_status.requests_per_minute);
-    println!("   Utilization: {:.1}%", rate_status.utilization_percentage());
+    println!(
+        "   Available tokens: {}/{}",
+        rate_status.available_tokens, rate_status.max_tokens
+    );
+    println!(
+        "   Available permits: {}/{}",
+        rate_status.available_permits, rate_status.max_permits
+    );
+    println!(
+        "   Requests per minute: {}",
+        rate_status.requests_per_minute
+    );
+    println!(
+        "   Utilization: {:.1}%",
+        rate_status.utilization_percentage()
+    );
     println!("   Near limit: {}", rate_status.is_near_limit());
 
     println!("\n🎉 Manual test completed successfully!");

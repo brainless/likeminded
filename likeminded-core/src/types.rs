@@ -7,7 +7,18 @@ pub struct RedditPost {
     pub content: Option<String>,
     pub subreddit: String,
     pub url: String,
+    pub permalink: String,
+    pub author: String,
     pub created_utc: i64,
+    pub score: i32,
+    pub num_comments: u32,
+    pub upvote_ratio: Option<f64>,
+    pub over_18: bool,
+    pub stickied: bool,
+    pub locked: bool,
+    pub is_self: bool,
+    pub domain: String,
+    pub thumbnail: Option<String>,
 }
 
 #[derive(Debug, Clone)]

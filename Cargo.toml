@@ -80,3 +80,4 @@ background-service = { path = "background-service" }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+iced = { workspace = true }

@@ -34,3 +34,16 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 tokio-test = "0.4"
+tracing-subscriber = "0.3"
+
+[[example]]
+name = "manual_test"
+path = "examples/manual_test.rs"
+
+[[example]]
+name = "component_test"
+path = "examples/component_test.rs"
+
+[[example]]
+name = "debug_callback"
+path = "examples/debug_callback.rs"

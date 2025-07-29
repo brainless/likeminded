@@ -138,9 +138,11 @@ impl RedditClient {
         callback_url: &str,
         expected_csrf: &CsrfToken,
     ) -> Result<RedditToken, CoreError> {
-        let url = Url::parse(callback_url).map_err(|_| {
+        tracing::debug!("Processing callback URL: {}", callback_url);
+        let url = Url::parse(callback_url).map_err(|e| {
+            tracing::error!("Failed to parse callback URL '{}': {}", callback_url, e);
             CoreError::RedditApi(RedditApiError::InvalidResponse {
-                details: "Invalid callback URL".to_string(),
+                details: format!("Invalid callback URL: {}", e),
             })
         })?;
 
@@ -184,14 +186,20 @@ impl RedditClient {
                 }
             };
 
+        // Clean the authorization code (Reddit sometimes adds trailing #_ characters)
+        let cleaned_auth_code = auth_code.trim_end_matches("#_");
+        tracing::debug!("Original auth code: '{}', cleaned: '{}'", auth_code, cleaned_auth_code);
+        
         // Exchange code for token
+        tracing::debug!("Exchanging authorization code for token");
         let token_result = self
             .oauth_client
-            .exchange_code(AuthorizationCode::new(auth_code.clone()))
+            .exchange_code(AuthorizationCode::new(cleaned_auth_code.to_string()))
             .set_pkce_verifier(pkce_verifier)
             .request_async(async_http_client)
             .await
             .map_err(|e| {
+                tracing::error!("Token exchange failed: {:?}", e);
                 CoreError::RedditApi(RedditApiError::AuthenticationFailed {
                     reason: format!("Token exchange failed: {}", e),
                 })

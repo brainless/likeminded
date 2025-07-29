@@ -188,11 +188,15 @@ impl RedditClient {
 
         // Clean the authorization code (Reddit sometimes adds trailing #_ characters)
         let cleaned_auth_code = auth_code.trim_end_matches("#_");
-        tracing::debug!("Original auth code: '{}', cleaned: '{}'", auth_code, cleaned_auth_code);
-        
+        tracing::debug!(
+            "Original auth code: '{}', cleaned: '{}'",
+            auth_code,
+            cleaned_auth_code
+        );
+
         // Exchange code for token
         tracing::debug!("Exchanging authorization code for token");
-        
+
         // Create a custom HTTP client to debug the token exchange request and add User-Agent
         let user_agent = self.config.user_agent.clone();
         let custom_http_client = move |mut request: oauth2::HttpRequest| {
@@ -202,31 +206,37 @@ impl RedditClient {
                 if let Ok(header_value) = user_agent.parse() {
                     request.headers.insert("user-agent", header_value);
                 }
-                
+
                 tracing::debug!("Token exchange request:");
                 tracing::debug!("  URL: {}", request.url);
                 tracing::debug!("  Method: {}", request.method);
                 tracing::debug!("  Headers: {:?}", request.headers);
                 tracing::debug!("  Body: {}", String::from_utf8_lossy(&request.body));
-                
+
                 let response = async_http_client(request).await;
-                
+
                 match &response {
                     Ok(resp) => {
                         tracing::debug!("Token exchange response:");
                         tracing::debug!("  Status: {:?}", resp.status_code);
                         tracing::debug!("  Headers: {:?}", resp.headers);
                         tracing::debug!("  Body: {}", String::from_utf8_lossy(&resp.body));
-                        
+
                         // Check if Reddit returned an error page instead of JSON
                         if resp.status_code.as_u16() != 200 {
                             let body_text = String::from_utf8_lossy(&resp.body);
                             if body_text.contains("whoa there, pardner!") {
                                 tracing::error!("Reddit blocked the request - likely due to User-Agent or rate limiting");
                                 tracing::error!("Response body contains: {}", body_text);
-                            } else if body_text.starts_with("<!doctype html>") || body_text.starts_with("<html") {
+                            } else if body_text.starts_with("<!doctype html>")
+                                || body_text.starts_with("<html")
+                            {
                                 tracing::error!("Reddit returned HTML error page instead of JSON");
-                                tracing::error!("Status: {}, Body: {}", resp.status_code.as_u16(), body_text);
+                                tracing::error!(
+                                    "Status: {}, Body: {}",
+                                    resp.status_code.as_u16(),
+                                    body_text
+                                );
                             }
                         }
                     }
@@ -234,11 +244,11 @@ impl RedditClient {
                         tracing::error!("Token exchange HTTP error: {:?}", e);
                     }
                 }
-                
+
                 response
             })
         };
-        
+
         let token_result = self
             .oauth_client
             .exchange_code(AuthorizationCode::new(cleaned_auth_code.to_string()))
@@ -395,12 +405,31 @@ impl RedditClient {
     }
 
     pub async fn fetch_posts(&mut self, subreddit: &str) -> Result<Vec<RedditPost>, CoreError> {
+        self.fetch_posts_with_options(subreddit, None, None, Some(25), None)
+            .await
+    }
+
+    pub async fn fetch_posts_with_options(
+        &mut self,
+        subreddit: &str,
+        sort: Option<&str>,
+        time_filter: Option<&str>,
+        limit: Option<u32>,
+        after: Option<&str>,
+    ) -> Result<Vec<RedditPost>, CoreError> {
         self.ensure_authenticated().await?;
 
         if let AuthState::Authenticated { token } = &self.auth_state {
             let api_client = api::RedditApiClient::new(self.config.user_agent.clone());
             let listing = api_client
-                .get_subreddit_posts(&token.access_token, subreddit, None, Some(25), None)
+                .get_subreddit_posts_with_time_filter(
+                    &token.access_token,
+                    subreddit,
+                    sort,
+                    time_filter,
+                    limit,
+                    after,
+                )
                 .await?;
 
             let posts: Vec<RedditPost> = listing
@@ -411,6 +440,68 @@ impl RedditClient {
                 .collect();
 
             Ok(posts)
+        } else {
+            Err(CoreError::RedditApi(RedditApiError::AuthenticationFailed {
+                reason: "Not authenticated".to_string(),
+            }))
+        }
+    }
+
+    pub async fn fetch_multiple_subreddit_posts(
+        &mut self,
+        subreddits: &[&str],
+        sort: Option<&str>,
+        time_filter: Option<&str>,
+        limit: Option<u32>,
+        after: Option<&str>,
+    ) -> Result<Vec<(String, Result<Vec<RedditPost>, CoreError>)>, CoreError> {
+        self.ensure_authenticated().await?;
+
+        if let AuthState::Authenticated { token } = &self.auth_state {
+            let api_client = api::RedditApiClient::new(self.config.user_agent.clone());
+            let results = api_client
+                .get_multiple_subreddit_posts(
+                    &token.access_token,
+                    subreddits,
+                    sort,
+                    time_filter,
+                    limit,
+                    after,
+                )
+                .await?;
+
+            // Convert API results to RedditPost results
+            let converted_results: Vec<(String, Result<Vec<RedditPost>, CoreError>)> = results
+                .into_iter()
+                .map(|(subreddit, listing_result)| {
+                    let posts_result = listing_result.map(|listing| {
+                        listing
+                            .data
+                            .children
+                            .into_iter()
+                            .map(|child| child.data.into())
+                            .collect()
+                    });
+                    (subreddit, posts_result)
+                })
+                .collect();
+
+            Ok(converted_results)
+        } else {
+            Err(CoreError::RedditApi(RedditApiError::AuthenticationFailed {
+                reason: "Not authenticated".to_string(),
+            }))
+        }
+    }
+
+    pub async fn check_subreddit_access(&mut self, subreddit: &str) -> Result<bool, CoreError> {
+        self.ensure_authenticated().await?;
+
+        if let AuthState::Authenticated { token } = &self.auth_state {
+            let api_client = api::RedditApiClient::new(self.config.user_agent.clone());
+            api_client
+                .check_subreddit_access(&token.access_token, subreddit)
+                .await
         } else {
             Err(CoreError::RedditApi(RedditApiError::AuthenticationFailed {
                 reason: "Not authenticated".to_string(),

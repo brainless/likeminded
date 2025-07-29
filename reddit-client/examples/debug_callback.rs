@@ -20,7 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Generate auth URL to get CSRF token
     let scopes = RedditClient::get_required_scopes();
     let (auth_url, csrf_token) = client.generate_auth_url(&scopes)?;
-    
+
     println!("Generated auth URL: {}", auth_url);
     println!("CSRF token: {}\n", csrf_token.secret());
 
@@ -29,7 +29,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "http://localhost:8080/callback?code=test123&state=abc123",
         "http://localhost:8080/callback?error=access_denied&state=abc123",
         "http://localhost:8080/callback?code=test123", // Missing state
-        "invalid-url", // Invalid URL format
+        "invalid-url",                                 // Invalid URL format
     ];
 
     for (i, test_url) in test_urls.iter().enumerate() {
@@ -50,11 +50,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Paste your actual callback URL here:");
     print!("> ");
     io::stdout().flush()?;
-    
+
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
     let input = input.trim();
-    
+
     if !input.is_empty() {
         println!("Testing URL: {}", input);
         match client.handle_callback(input, &csrf_token).await {

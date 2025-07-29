@@ -254,16 +254,57 @@ impl RedditApiClient {
         limit: Option<u32>,
         after: Option<&str>,
     ) -> Result<RedditListing<RedditPostData>, CoreError> {
-        let endpoint = format!("/r/{}/hot", subreddit);
-        let mut params = Vec::with_capacity(3);
-        let limit_str = limit.map(|l| l.to_string());
+        self.get_subreddit_posts_with_time_filter(access_token, subreddit, sort, None, limit, after)
+            .await
+    }
 
-        if let Some(sort_by) = sort {
-            params.push(("sort", sort_by));
+    pub async fn get_subreddit_posts_with_time_filter(
+        &self,
+        access_token: &str,
+        subreddit: &str,
+        sort: Option<&str>,
+        time_filter: Option<&str>,
+        limit: Option<u32>,
+        after: Option<&str>,
+    ) -> Result<RedditListing<RedditPostData>, CoreError> {
+        // Default to "hot" if no sort specified
+        let sort_method = sort.unwrap_or("hot");
+
+        // Validate sort method
+        match sort_method {
+            "hot" | "new" | "top" | "rising" | "controversial" => {}
+            _ => {
+                return Err(CoreError::RedditApi(RedditApiError::InvalidResponse {
+                    details: format!("Invalid sort method: {}. Valid options: hot, new, top, rising, controversial", sort_method),
+                }));
+            }
         }
-        if let Some(ref limit_s) = limit_str {
-            params.push(("limit", limit_s.as_str()));
+
+        let endpoint = format!("/r/{}/{}", subreddit, sort_method);
+        let mut params = Vec::with_capacity(4);
+
+        // Add limit parameter (default to 25, max 100)
+        let actual_limit = limit.unwrap_or(25).min(100);
+        let limit_str = actual_limit.to_string();
+        params.push(("limit", limit_str.as_str()));
+
+        // Add time filter for top/controversial sorts
+        if let Some(time) = time_filter {
+            if sort_method == "top" || sort_method == "controversial" {
+                match time {
+                    "hour" | "day" | "week" | "month" | "year" | "all" => {
+                        params.push(("t", time));
+                    }
+                    _ => {
+                        return Err(CoreError::RedditApi(RedditApiError::InvalidResponse {
+                            details: format!("Invalid time filter: {}. Valid options: hour, day, week, month, year, all", time),
+                        }));
+                    }
+                }
+            }
         }
+
+        // Add pagination parameter
         if let Some(after_val) = after {
             params.push(("after", after_val));
         }
@@ -286,11 +327,93 @@ impl RedditApiClient {
         })?;
 
         info!(
-            "Retrieved {} posts from r/{}",
+            "Retrieved {} posts from r/{} (sort: {}, limit: {})",
             listing.data.children.len(),
-            subreddit
+            subreddit,
+            sort_method,
+            actual_limit
         );
         Ok(listing)
+    }
+
+    /// Fetch posts from multiple subreddits concurrently
+    pub async fn get_multiple_subreddit_posts(
+        &self,
+        access_token: &str,
+        subreddits: &[&str],
+        sort: Option<&str>,
+        time_filter: Option<&str>,
+        limit: Option<u32>,
+        after: Option<&str>,
+    ) -> Result<Vec<(String, Result<RedditListing<RedditPostData>, CoreError>)>, CoreError> {
+        use futures::future::join_all;
+
+        if subreddits.is_empty() {
+            return Ok(vec![]);
+        }
+
+        info!("Fetching posts from {} subreddits", subreddits.len());
+
+        // Create futures for all subreddit requests
+        let futures = subreddits.iter().map(|subreddit| {
+            let subreddit_name = subreddit.to_string();
+            async move {
+                let result = self
+                    .get_subreddit_posts_with_time_filter(
+                        access_token,
+                        &subreddit_name,
+                        sort,
+                        time_filter,
+                        limit,
+                        after,
+                    )
+                    .await;
+                (subreddit_name, result)
+            }
+        });
+
+        // Execute all requests concurrently
+        let results = join_all(futures).await;
+
+        let success_count = results.iter().filter(|(_, result)| result.is_ok()).count();
+        info!(
+            "Successfully fetched posts from {}/{} subreddits",
+            success_count,
+            subreddits.len()
+        );
+
+        Ok(results)
+    }
+
+    /// Check if a subreddit exists and is accessible
+    pub async fn check_subreddit_access(
+        &self,
+        access_token: &str,
+        subreddit: &str,
+    ) -> Result<bool, CoreError> {
+        let endpoint = format!("/r/{}/about", subreddit);
+
+        match self
+            .make_request(Method::GET, &endpoint, access_token, None)
+            .await
+        {
+            Ok(_) => {
+                debug!("Subreddit r/{} is accessible", subreddit);
+                Ok(true)
+            }
+            Err(CoreError::RedditApi(RedditApiError::Forbidden { .. })) => {
+                warn!("Subreddit r/{} is private or restricted", subreddit);
+                Ok(false)
+            }
+            Err(CoreError::RedditApi(RedditApiError::SubredditNotFound { .. })) => {
+                warn!("Subreddit r/{} does not exist", subreddit);
+                Ok(false)
+            }
+            Err(e) => {
+                error!("Error checking subreddit r/{}: {:?}", subreddit, e);
+                Err(e)
+            }
+        }
     }
 
     pub async fn get_subreddit_info(
@@ -376,7 +499,18 @@ impl From<RedditPostData> for RedditPost {
             },
             subreddit: post_data.subreddit,
             url: post_data.url,
+            permalink: format!("https://reddit.com{}", post_data.permalink),
+            author: post_data.author,
             created_utc: post_data.created_utc as i64,
+            score: post_data.score,
+            num_comments: post_data.num_comments,
+            upvote_ratio: post_data.upvote_ratio,
+            over_18: post_data.over_18,
+            stickied: post_data.stickied,
+            locked: post_data.locked,
+            is_self: post_data.is_self,
+            domain: post_data.domain,
+            thumbnail: post_data.thumbnail,
         }
     }
 }

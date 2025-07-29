@@ -578,8 +578,11 @@ impl RedditClient {
 }
 
 pub mod api;
+pub mod api_tracker;
 pub mod metrics;
 pub mod rate_limiter;
+pub mod request_queue;
+pub mod usage_dashboard;
 
 #[cfg(test)]
 mod tests;

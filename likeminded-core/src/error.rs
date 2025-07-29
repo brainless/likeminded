@@ -40,6 +40,18 @@ pub enum CoreError {
 
     #[error("Internal error: {message}")]
     Internal { message: String },
+
+    #[error("Rate limited: {message}")]
+    RateLimited {
+        message: String,
+        retry_after: Option<std::time::Duration>,
+    },
+
+    #[error("Request failed: {message}")]
+    RequestFailed {
+        message: String,
+        status_code: Option<u16>,
+    },
 }
 
 #[derive(Error, Debug)]

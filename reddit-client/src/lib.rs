@@ -339,10 +339,101 @@ impl RedditClient {
         ]
     }
 
-    pub async fn fetch_posts(&self, _subreddit: &str) -> Result<Vec<RedditPost>, CoreError> {
-        todo!("Implement post fetching - will be implemented in next issue")
+    pub async fn fetch_posts(&mut self, subreddit: &str) -> Result<Vec<RedditPost>, CoreError> {
+        self.ensure_authenticated().await?;
+
+        if let AuthState::Authenticated { token } = &self.auth_state {
+            let api_client = api::RedditApiClient::new(self.config.user_agent.clone());
+            let listing = api_client
+                .get_subreddit_posts(&token.access_token, subreddit, None, Some(25), None)
+                .await?;
+
+            let posts: Vec<RedditPost> = listing
+                .data
+                .children
+                .into_iter()
+                .map(|child| child.data.into())
+                .collect();
+
+            Ok(posts)
+        } else {
+            Err(CoreError::RedditApi(RedditApiError::AuthenticationFailed {
+                reason: "Not authenticated".to_string(),
+            }))
+        }
+    }
+
+    pub async fn get_user_info(&mut self) -> Result<api::RedditUserData, CoreError> {
+        self.ensure_authenticated().await?;
+
+        if let AuthState::Authenticated { token } = &self.auth_state {
+            let api_client = api::RedditApiClient::new(self.config.user_agent.clone());
+            api_client.get_user_info(&token.access_token).await
+        } else {
+            Err(CoreError::RedditApi(RedditApiError::AuthenticationFailed {
+                reason: "Not authenticated".to_string(),
+            }))
+        }
+    }
+
+    pub async fn get_subreddit_info(
+        &mut self,
+        subreddit: &str,
+    ) -> Result<api::RedditSubredditData, CoreError> {
+        self.ensure_authenticated().await?;
+
+        if let AuthState::Authenticated { token } = &self.auth_state {
+            let api_client = api::RedditApiClient::new(self.config.user_agent.clone());
+            api_client
+                .get_subreddit_info(&token.access_token, subreddit)
+                .await
+        } else {
+            Err(CoreError::RedditApi(RedditApiError::AuthenticationFailed {
+                reason: "Not authenticated".to_string(),
+            }))
+        }
+    }
+
+    pub async fn get_user_subreddits(
+        &mut self,
+    ) -> Result<Vec<api::RedditSubredditData>, CoreError> {
+        self.ensure_authenticated().await?;
+
+        if let AuthState::Authenticated { token } = &self.auth_state {
+            let api_client = api::RedditApiClient::new(self.config.user_agent.clone());
+            let listing = api_client
+                .get_user_subreddits(&token.access_token, Some(100))
+                .await?;
+
+            let subreddits: Vec<api::RedditSubredditData> = listing
+                .data
+                .children
+                .into_iter()
+                .map(|child| child.data)
+                .collect();
+
+            Ok(subreddits)
+        } else {
+            Err(CoreError::RedditApi(RedditApiError::AuthenticationFailed {
+                reason: "Not authenticated".to_string(),
+            }))
+        }
+    }
+
+    pub async fn get_api_metrics(&self) -> metrics::ApiMetrics {
+        let api_client = api::RedditApiClient::new(self.config.user_agent.clone());
+        api_client.get_metrics().await
+    }
+
+    pub async fn get_rate_limit_status(&self) -> rate_limiter::RateLimitStatus {
+        let api_client = api::RedditApiClient::new(self.config.user_agent.clone());
+        api_client.get_rate_limit_status().await
     }
 }
+
+pub mod api;
+pub mod metrics;
+pub mod rate_limiter;
 
 #[cfg(test)]
 mod tests;

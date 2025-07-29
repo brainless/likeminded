@@ -1,6 +1,8 @@
 #[cfg(test)]
 mod tests {
-    use crate::{AuthState, RedditClient, RedditOAuth2Config, RedditToken};
+    use crate::{
+        api, metrics, rate_limiter, AuthState, RedditClient, RedditOAuth2Config, RedditToken,
+    };
     use likeminded_core::{CoreError, RedditApiError};
     use std::time::{Duration, SystemTime};
 
@@ -192,5 +194,150 @@ mod tests {
         assert_eq!(deserialized.access_token, token.access_token);
         assert_eq!(deserialized.refresh_token, token.refresh_token);
         assert_eq!(deserialized.scope, token.scope);
+    }
+
+    // API Client Tests
+    #[tokio::test]
+    async fn test_api_client_creation() {
+        let client = api::RedditApiClient::new("test-user-agent/1.0".to_string());
+        let status = client.get_rate_limit_status().await;
+        assert!(status.available_tokens > 0);
+    }
+
+    #[tokio::test]
+    async fn test_api_metrics_integration() {
+        let client = api::RedditApiClient::new("test-user-agent/1.0".to_string());
+
+        // Check initial metrics
+        let initial_metrics = client.get_metrics().await;
+        assert_eq!(initial_metrics.total_requests, 0);
+
+        // Reset metrics should work
+        client.reset_metrics().await;
+        let reset_metrics = client.get_metrics().await;
+        assert_eq!(reset_metrics.total_requests, 0);
+    }
+
+    #[test]
+    fn test_reddit_post_data_conversion() {
+        let post_data = api::RedditPostData {
+            id: "test123".to_string(),
+            title: "Test Post".to_string(),
+            selftext: "This is test content".to_string(),
+            author: "test_user".to_string(),
+            subreddit: "test".to_string(),
+            subreddit_name_prefixed: "r/test".to_string(),
+            url: "https://reddit.com/r/test/comments/test123".to_string(),
+            permalink: "/r/test/comments/test123".to_string(),
+            created_utc: 1640995200.0,
+            score: 42,
+            num_comments: 5,
+            over_18: false,
+            stickied: false,
+            locked: false,
+            ups: 45,
+            downs: 3,
+            upvote_ratio: Some(0.93),
+            thumbnail: None,
+            is_self: true,
+            domain: "self.test".to_string(),
+        };
+
+        let reddit_post: likeminded_core::RedditPost = post_data.into();
+        assert_eq!(reddit_post.id, "test123");
+        assert_eq!(reddit_post.title, "Test Post");
+        assert_eq!(
+            reddit_post.content,
+            Some("This is test content".to_string())
+        );
+    }
+
+    // Rate Limiter Tests
+    #[tokio::test]
+    async fn test_rate_limiter_status() {
+        let config = rate_limiter::RateLimitConfig::reddit_oauth();
+        let limiter = rate_limiter::RateLimiter::new(config);
+
+        let status = limiter.get_rate_limit_status().await;
+        assert!(status.available_tokens > 0);
+        assert_eq!(status.max_tokens, 10);
+        assert_eq!(status.requests_per_minute, 100);
+    }
+
+    #[tokio::test]
+    async fn test_rate_limiter_permits() {
+        let config = rate_limiter::RateLimitConfig::reddit_oauth();
+        let limiter = rate_limiter::RateLimiter::new(config);
+
+        // Should be able to acquire a permit
+        let _permit = limiter.acquire_permit().await;
+
+        // Check status after acquiring permit
+        let status = limiter.get_rate_limit_status().await;
+        assert!(status.available_tokens < 10);
+    }
+
+    // Metrics Tests
+    #[tokio::test]
+    async fn test_metrics_collector() {
+        let collector = metrics::MetricsCollector::new();
+
+        let request_metrics = metrics::RequestMetrics {
+            endpoint: "/api/v1/me".to_string(),
+            method: "GET".to_string(),
+            status_code: Some(200),
+            response_time: Duration::from_millis(150),
+            success: true,
+            rate_limited: false,
+            error_type: None,
+        };
+
+        collector.record_request(request_metrics).await;
+
+        let api_metrics = collector.get_metrics().await;
+        assert_eq!(api_metrics.total_requests, 1);
+        assert_eq!(api_metrics.successful_requests, 1);
+        assert_eq!(api_metrics.failed_requests, 0);
+        assert!(api_metrics.last_request_time.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_endpoint_specific_metrics() {
+        let collector = metrics::MetricsCollector::new();
+
+        let request_metrics = metrics::RequestMetrics {
+            endpoint: "/r/rust/hot".to_string(),
+            method: "GET".to_string(),
+            status_code: Some(200),
+            response_time: Duration::from_millis(200),
+            success: true,
+            rate_limited: false,
+            error_type: None,
+        };
+
+        collector.record_request(request_metrics).await;
+
+        let endpoint_metrics = collector.get_endpoint_metrics("/r/rust/hot").await;
+        assert!(endpoint_metrics.is_some());
+
+        let metrics = endpoint_metrics.unwrap();
+        assert_eq!(metrics.request_count, 1);
+        assert_eq!(metrics.success_count, 1);
+        assert_eq!(metrics.success_rate(), 1.0);
+        assert_eq!(metrics.average_response_time(), Duration::from_millis(200));
+    }
+
+    #[tokio::test]
+    async fn test_integration_client_with_auth() {
+        let config = create_test_config();
+        let client = RedditClient::new(config).unwrap();
+
+        // Test that API metrics are accessible through the client
+        let metrics = client.get_api_metrics().await;
+        assert_eq!(metrics.total_requests, 0);
+
+        // Test rate limit status
+        let status = client.get_rate_limit_status().await;
+        assert!(status.available_tokens > 0);
     }
 }

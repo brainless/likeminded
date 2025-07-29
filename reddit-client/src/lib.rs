@@ -138,9 +138,11 @@ impl RedditClient {
         callback_url: &str,
         expected_csrf: &CsrfToken,
     ) -> Result<RedditToken, CoreError> {
-        let url = Url::parse(callback_url).map_err(|_| {
+        tracing::debug!("Processing callback URL: {}", callback_url);
+        let url = Url::parse(callback_url).map_err(|e| {
+            tracing::error!("Failed to parse callback URL '{}': {}", callback_url, e);
             CoreError::RedditApi(RedditApiError::InvalidResponse {
-                details: "Invalid callback URL".to_string(),
+                details: format!("Invalid callback URL: {}", e),
             })
         })?;
 
@@ -184,14 +186,67 @@ impl RedditClient {
                 }
             };
 
+        // Clean the authorization code (Reddit sometimes adds trailing #_ characters)
+        let cleaned_auth_code = auth_code.trim_end_matches("#_");
+        tracing::debug!("Original auth code: '{}', cleaned: '{}'", auth_code, cleaned_auth_code);
+        
         // Exchange code for token
+        tracing::debug!("Exchanging authorization code for token");
+        
+        // Create a custom HTTP client to debug the token exchange request and add User-Agent
+        let user_agent = self.config.user_agent.clone();
+        let custom_http_client = move |mut request: oauth2::HttpRequest| {
+            let user_agent = user_agent.clone();
+            Box::pin(async move {
+                // Add User-Agent header - critical for Reddit API
+                if let Ok(header_value) = user_agent.parse() {
+                    request.headers.insert("user-agent", header_value);
+                }
+                
+                tracing::debug!("Token exchange request:");
+                tracing::debug!("  URL: {}", request.url);
+                tracing::debug!("  Method: {}", request.method);
+                tracing::debug!("  Headers: {:?}", request.headers);
+                tracing::debug!("  Body: {}", String::from_utf8_lossy(&request.body));
+                
+                let response = async_http_client(request).await;
+                
+                match &response {
+                    Ok(resp) => {
+                        tracing::debug!("Token exchange response:");
+                        tracing::debug!("  Status: {:?}", resp.status_code);
+                        tracing::debug!("  Headers: {:?}", resp.headers);
+                        tracing::debug!("  Body: {}", String::from_utf8_lossy(&resp.body));
+                        
+                        // Check if Reddit returned an error page instead of JSON
+                        if resp.status_code.as_u16() != 200 {
+                            let body_text = String::from_utf8_lossy(&resp.body);
+                            if body_text.contains("whoa there, pardner!") {
+                                tracing::error!("Reddit blocked the request - likely due to User-Agent or rate limiting");
+                                tracing::error!("Response body contains: {}", body_text);
+                            } else if body_text.starts_with("<!doctype html>") || body_text.starts_with("<html") {
+                                tracing::error!("Reddit returned HTML error page instead of JSON");
+                                tracing::error!("Status: {}, Body: {}", resp.status_code.as_u16(), body_text);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Token exchange HTTP error: {:?}", e);
+                    }
+                }
+                
+                response
+            })
+        };
+        
         let token_result = self
             .oauth_client
-            .exchange_code(AuthorizationCode::new(auth_code.clone()))
+            .exchange_code(AuthorizationCode::new(cleaned_auth_code.to_string()))
             .set_pkce_verifier(pkce_verifier)
-            .request_async(async_http_client)
+            .request_async(custom_http_client)
             .await
             .map_err(|e| {
+                tracing::error!("Token exchange failed: {:?}", e);
                 CoreError::RedditApi(RedditApiError::AuthenticationFailed {
                     reason: format!("Token exchange failed: {}", e),
                 })
@@ -339,10 +394,101 @@ impl RedditClient {
         ]
     }
 
-    pub async fn fetch_posts(&self, _subreddit: &str) -> Result<Vec<RedditPost>, CoreError> {
-        todo!("Implement post fetching - will be implemented in next issue")
+    pub async fn fetch_posts(&mut self, subreddit: &str) -> Result<Vec<RedditPost>, CoreError> {
+        self.ensure_authenticated().await?;
+
+        if let AuthState::Authenticated { token } = &self.auth_state {
+            let api_client = api::RedditApiClient::new(self.config.user_agent.clone());
+            let listing = api_client
+                .get_subreddit_posts(&token.access_token, subreddit, None, Some(25), None)
+                .await?;
+
+            let posts: Vec<RedditPost> = listing
+                .data
+                .children
+                .into_iter()
+                .map(|child| child.data.into())
+                .collect();
+
+            Ok(posts)
+        } else {
+            Err(CoreError::RedditApi(RedditApiError::AuthenticationFailed {
+                reason: "Not authenticated".to_string(),
+            }))
+        }
+    }
+
+    pub async fn get_user_info(&mut self) -> Result<api::RedditUserData, CoreError> {
+        self.ensure_authenticated().await?;
+
+        if let AuthState::Authenticated { token } = &self.auth_state {
+            let api_client = api::RedditApiClient::new(self.config.user_agent.clone());
+            api_client.get_user_info(&token.access_token).await
+        } else {
+            Err(CoreError::RedditApi(RedditApiError::AuthenticationFailed {
+                reason: "Not authenticated".to_string(),
+            }))
+        }
+    }
+
+    pub async fn get_subreddit_info(
+        &mut self,
+        subreddit: &str,
+    ) -> Result<api::RedditSubredditData, CoreError> {
+        self.ensure_authenticated().await?;
+
+        if let AuthState::Authenticated { token } = &self.auth_state {
+            let api_client = api::RedditApiClient::new(self.config.user_agent.clone());
+            api_client
+                .get_subreddit_info(&token.access_token, subreddit)
+                .await
+        } else {
+            Err(CoreError::RedditApi(RedditApiError::AuthenticationFailed {
+                reason: "Not authenticated".to_string(),
+            }))
+        }
+    }
+
+    pub async fn get_user_subreddits(
+        &mut self,
+    ) -> Result<Vec<api::RedditSubredditData>, CoreError> {
+        self.ensure_authenticated().await?;
+
+        if let AuthState::Authenticated { token } = &self.auth_state {
+            let api_client = api::RedditApiClient::new(self.config.user_agent.clone());
+            let listing = api_client
+                .get_user_subreddits(&token.access_token, Some(100))
+                .await?;
+
+            let subreddits: Vec<api::RedditSubredditData> = listing
+                .data
+                .children
+                .into_iter()
+                .map(|child| child.data)
+                .collect();
+
+            Ok(subreddits)
+        } else {
+            Err(CoreError::RedditApi(RedditApiError::AuthenticationFailed {
+                reason: "Not authenticated".to_string(),
+            }))
+        }
+    }
+
+    pub async fn get_api_metrics(&self) -> metrics::ApiMetrics {
+        let api_client = api::RedditApiClient::new(self.config.user_agent.clone());
+        api_client.get_metrics().await
+    }
+
+    pub async fn get_rate_limit_status(&self) -> rate_limiter::RateLimitStatus {
+        let api_client = api::RedditApiClient::new(self.config.user_agent.clone());
+        api_client.get_rate_limit_status().await
     }
 }
+
+pub mod api;
+pub mod metrics;
+pub mod rate_limiter;
 
 #[cfg(test)]
 mod tests;

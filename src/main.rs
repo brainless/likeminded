@@ -21,7 +21,10 @@ async fn main() -> Result<(), CoreError> {
 
     LikemindedApp::run(settings).map_err(|e| {
         tracing::error!("Application error: {}", e);
-        CoreError::Configuration(format!("GUI error: {e}"))
+        CoreError::Config(likeminded_core::ConfigError::InvalidValue {
+            field: "GUI".to_string(),
+            value: format!("GUI error: {e}"),
+        })
     })
 }
 

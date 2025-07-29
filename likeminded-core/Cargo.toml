@@ -20,3 +20,18 @@ chrono = { workspace = true }
 
 # Utilities
 uuid = { workspace = true }
+
+# HTTP client for error conversion
+reqwest = { workspace = true }
+
+# Database for error conversion
+sqlx = { workspace = true }
+
+# Config parsing
+toml = "0.8"
+
+# Logging
+tracing = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }

@@ -4500,6 +4500,7 @@ name = "reddit-client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "fastrand",
  "futures",
  "likeminded-core",
  "oauth2",

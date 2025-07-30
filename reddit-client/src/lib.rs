@@ -575,11 +575,22 @@ impl RedditClient {
         let api_client = api::RedditApiClient::new(self.config.user_agent.clone());
         api_client.get_rate_limit_status().await
     }
+
+    pub fn get_retry_metrics(&self) -> retry::RetryMetrics {
+        let api_client = api::RedditApiClient::new(self.config.user_agent.clone());
+        api_client.get_retry_metrics()
+    }
+
+    pub fn get_circuit_breaker_state(&self) -> retry::CircuitBreakerState {
+        let api_client = api::RedditApiClient::new(self.config.user_agent.clone());
+        api_client.get_circuit_breaker_state()
+    }
 }
 
 pub mod api;
 pub mod metrics;
 pub mod rate_limiter;
+pub mod retry;
 
 #[cfg(test)]
 mod tests;

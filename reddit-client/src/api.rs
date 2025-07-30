@@ -1,3 +1,4 @@
+use crate::api_tracker::ApiTracker;
 use crate::metrics::{MetricsCollector, RequestMetrics};
 use crate::rate_limiter::{RateLimitConfig, RateLimiter};
 use crate::retry::{RetryConfig, RetryExecutor};
@@ -91,6 +92,7 @@ pub struct RedditApiClient {
     rate_limiter: Arc<RateLimiter>,
     metrics: Arc<MetricsCollector>,
     retry_executor: Arc<RetryExecutor>,
+    api_tracker: Option<Arc<ApiTracker>>,
     user_agent: String,
 }
 
@@ -113,6 +115,7 @@ impl RedditApiClient {
             rate_limiter,
             metrics,
             retry_executor,
+            api_tracker: None,
             user_agent,
         }
     }
@@ -135,8 +138,14 @@ impl RedditApiClient {
             rate_limiter,
             metrics,
             retry_executor,
+            api_tracker: None,
             user_agent,
         }
+    }
+
+    pub fn with_api_tracker(mut self, api_tracker: Arc<ApiTracker>) -> Self {
+        self.api_tracker = Some(api_tracker);
+        self
     }
 
     /// Make a request with retry logic
@@ -147,6 +156,20 @@ impl RedditApiClient {
         access_token: &str,
         query_params: Option<&[(&str, &str)]>,
     ) -> Result<Response, CoreError> {
+        self.make_request_with_context(method, endpoint, access_token, query_params, None, None, 0)
+            .await
+    }
+
+    pub async fn make_request_with_context(
+        &self,
+        method: Method,
+        endpoint: &str,
+        access_token: &str,
+        query_params: Option<&[(&str, &str)]>,
+        operation_type: Option<&str>,
+        subreddit: Option<&str>,
+        priority: i32,
+    ) -> Result<Response, CoreError> {
         let operation_name = format!("{} {}", method, endpoint);
 
         // Clone values for use in closure
@@ -154,6 +177,8 @@ impl RedditApiClient {
         let endpoint_clone = endpoint.to_string();
         let access_token_clone = access_token.to_string();
         let query_params_clone = query_params.map(|params| params.to_vec());
+        let operation_type_clone = operation_type.map(|s| s.to_string());
+        let subreddit_clone = subreddit.map(|s| s.to_string());
 
         self.retry_executor
             .execute(&operation_name, || {
@@ -161,6 +186,8 @@ impl RedditApiClient {
                 let endpoint = endpoint_clone.clone();
                 let access_token = access_token_clone.clone();
                 let query_params = query_params_clone.clone();
+                let operation_type = operation_type_clone.clone();
+                let subreddit = subreddit_clone.clone();
 
                 async move {
                     self.make_request_internal(
@@ -168,6 +195,9 @@ impl RedditApiClient {
                         &endpoint,
                         &access_token,
                         query_params.as_deref(),
+                        operation_type.as_deref(),
+                        subreddit.as_deref(),
+                        priority,
                     )
                     .await
                 }
@@ -182,6 +212,9 @@ impl RedditApiClient {
         endpoint: &str,
         access_token: &str,
         query_params: Option<&[(&str, &str)]>,
+        operation_type: Option<&str>,
+        subreddit: Option<&str>,
+        priority: i32,
     ) -> Result<Response, CoreError> {
         let url = format!("{}{}", REDDIT_API_BASE, endpoint);
         let start_time = Instant::now();
@@ -190,9 +223,17 @@ impl RedditApiClient {
         let mut error_type = None;
         let mut rate_limited = false;
 
+        // Get rate limit status before request
+        let rate_status_before = self.rate_limiter.get_rate_limit_status().await;
+        let tokens_before = rate_status_before.available_tokens;
+
         // Acquire rate limit permit
-        let _permit = self.rate_limiter.acquire_permit().await;
-        debug!("Acquired rate limit permit for {} {}", method, endpoint);
+        let permit = self.rate_limiter.acquire_permit().await;
+        let queue_wait_time = permit.queue_wait_time;
+        debug!(
+            "Acquired rate limit permit for {} {} (waited {:?})",
+            method, endpoint, queue_wait_time
+        );
 
         // Build request
         let mut request_builder = self
@@ -286,17 +327,50 @@ impl RedditApiClient {
             response_time,
             success,
             rate_limited,
-            error_type,
+            error_type: error_type.clone(),
         };
 
         self.metrics.record_request(request_metrics).await;
+
+        // Record API call in tracker if available
+        if let Some(ref tracker) = self.api_tracker {
+            let rate_status_after = self.rate_limiter.get_rate_limit_status().await;
+            let tokens_after = rate_status_after.available_tokens;
+
+            if let Err(e) = tracker
+                .record_api_call(
+                    endpoint,
+                    &method.to_string(),
+                    status_code,
+                    response_time,
+                    rate_limited,
+                    priority,
+                    queue_wait_time,
+                    operation_type,
+                    subreddit,
+                    Some(tokens_before),
+                    Some(tokens_after),
+                )
+                .await
+            {
+                error!("Failed to record API call in tracker: {}", e);
+            }
+        }
 
         Ok(response)
     }
 
     pub async fn get_user_info(&self, access_token: &str) -> Result<RedditUserData, CoreError> {
         let response = self
-            .make_request(Method::GET, "/api/v1/me", access_token, None)
+            .make_request_with_context(
+                Method::GET,
+                "/api/v1/me",
+                access_token,
+                None,
+                Some("get_user_info"),
+                None,
+                0,
+            )
             .await?;
 
         let user_data: RedditUserData = response.json().await.map_err(|e| {
@@ -380,7 +454,15 @@ impl RedditApiClient {
         };
 
         let response = self
-            .make_request(Method::GET, &endpoint, access_token, query_params)
+            .make_request_with_context(
+                Method::GET,
+                &endpoint,
+                access_token,
+                query_params,
+                Some("get_subreddit_posts"),
+                Some(subreddit),
+                0,
+            )
             .await?;
 
         let listing: RedditListing<RedditPostData> = response.json().await.map_err(|e| {
@@ -458,7 +540,15 @@ impl RedditApiClient {
         let endpoint = format!("/r/{}/about", subreddit);
 
         match self
-            .make_request(Method::GET, &endpoint, access_token, None)
+            .make_request_with_context(
+                Method::GET,
+                &endpoint,
+                access_token,
+                None,
+                Some("check_subreddit_access"),
+                Some(subreddit),
+                -1, // Lower priority for access checks
+            )
             .await
         {
             Ok(_) => {
@@ -488,7 +578,15 @@ impl RedditApiClient {
         let endpoint = format!("/r/{}/about", subreddit);
 
         let response = self
-            .make_request(Method::GET, &endpoint, access_token, None)
+            .make_request_with_context(
+                Method::GET,
+                &endpoint,
+                access_token,
+                None,
+                Some("get_subreddit_info"),
+                Some(subreddit),
+                0,
+            )
             .await?;
 
         let subreddit_response: RedditListingChild<RedditSubredditData> =
@@ -523,7 +621,15 @@ impl RedditApiClient {
         };
 
         let response = self
-            .make_request(Method::GET, endpoint, access_token, query_params)
+            .make_request_with_context(
+                Method::GET,
+                endpoint,
+                access_token,
+                query_params,
+                Some("get_user_subreddits"),
+                None,
+                1, // High priority for user data
+            )
             .await?;
 
         let listing: RedditListing<RedditSubredditData> = response.json().await.map_err(|e| {

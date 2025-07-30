@@ -1,6 +1,7 @@
 use crate::api_tracker::ApiTracker;
 use crate::metrics::{MetricsCollector, RequestMetrics};
 use crate::rate_limiter::{RateLimitConfig, RateLimiter};
+use crate::retry::{RetryConfig, RetryExecutor};
 use likeminded_core::{CoreError, RedditApiError, RedditPost};
 use reqwest::{Client, Method, Response};
 use serde::{Deserialize, Serialize};
@@ -90,6 +91,7 @@ pub struct RedditApiClient {
     http_client: Client,
     rate_limiter: Arc<RateLimiter>,
     metrics: Arc<MetricsCollector>,
+    retry_executor: Arc<RetryExecutor>,
     api_tracker: Option<Arc<ApiTracker>>,
     user_agent: String,
 }
@@ -99,6 +101,8 @@ impl RedditApiClient {
         let rate_config = RateLimitConfig::reddit_oauth();
         let rate_limiter = Arc::new(RateLimiter::new(rate_config));
         let metrics = Arc::new(MetricsCollector::new());
+        let retry_config = RetryConfig::reddit();
+        let retry_executor = Arc::new(RetryExecutor::new(retry_config));
 
         let http_client = Client::builder()
             .user_agent(&user_agent)
@@ -110,6 +114,30 @@ impl RedditApiClient {
             http_client,
             rate_limiter,
             metrics,
+            retry_executor,
+            api_tracker: None,
+            user_agent,
+        }
+    }
+
+    /// Create a new client with custom retry configuration
+    pub fn with_retry_config(user_agent: String, retry_config: RetryConfig) -> Self {
+        let rate_config = RateLimitConfig::reddit_oauth();
+        let rate_limiter = Arc::new(RateLimiter::new(rate_config));
+        let metrics = Arc::new(MetricsCollector::new());
+        let retry_executor = Arc::new(RetryExecutor::new(retry_config));
+
+        let http_client = Client::builder()
+            .user_agent(&user_agent)
+            .timeout(Duration::from_secs(30))
+            .build()
+            .expect("Failed to create HTTP client");
+
+        Self {
+            http_client,
+            rate_limiter,
+            metrics,
+            retry_executor,
             api_tracker: None,
             user_agent,
         }
@@ -120,6 +148,7 @@ impl RedditApiClient {
         self
     }
 
+    /// Make a request with retry logic
     pub async fn make_request(
         &self,
         method: Method,
@@ -132,6 +161,52 @@ impl RedditApiClient {
     }
 
     pub async fn make_request_with_context(
+        &self,
+        method: Method,
+        endpoint: &str,
+        access_token: &str,
+        query_params: Option<&[(&str, &str)]>,
+        operation_type: Option<&str>,
+        subreddit: Option<&str>,
+        priority: i32,
+    ) -> Result<Response, CoreError> {
+        let operation_name = format!("{} {}", method, endpoint);
+
+        // Clone values for use in closure
+        let method_clone = method.clone();
+        let endpoint_clone = endpoint.to_string();
+        let access_token_clone = access_token.to_string();
+        let query_params_clone = query_params.map(|params| params.to_vec());
+        let operation_type_clone = operation_type.map(|s| s.to_string());
+        let subreddit_clone = subreddit.map(|s| s.to_string());
+
+        self.retry_executor
+            .execute(&operation_name, || {
+                let method = method_clone.clone();
+                let endpoint = endpoint_clone.clone();
+                let access_token = access_token_clone.clone();
+                let query_params = query_params_clone.clone();
+                let operation_type = operation_type_clone.clone();
+                let subreddit = subreddit_clone.clone();
+
+                async move {
+                    self.make_request_internal(
+                        method,
+                        &endpoint,
+                        &access_token,
+                        query_params.as_deref(),
+                        operation_type.as_deref(),
+                        subreddit.as_deref(),
+                        priority,
+                    )
+                    .await
+                }
+            })
+            .await
+    }
+
+    /// Internal request method without retry logic
+    async fn make_request_internal(
         &self,
         method: Method,
         endpoint: &str,
@@ -578,6 +653,21 @@ impl RedditApiClient {
 
     pub async fn reset_metrics(&self) {
         self.metrics.reset_metrics().await;
+    }
+
+    /// Get retry metrics
+    pub fn get_retry_metrics(&self) -> crate::retry::RetryMetrics {
+        self.retry_executor.get_metrics()
+    }
+
+    /// Get circuit breaker state
+    pub fn get_circuit_breaker_state(&self) -> crate::retry::CircuitBreakerState {
+        self.retry_executor.get_circuit_breaker_state()
+    }
+
+    /// Reset retry metrics
+    pub fn reset_retry_metrics(&self) {
+        self.retry_executor.reset_metrics();
     }
 }
 

@@ -54,7 +54,7 @@ pub enum CoreError {
     },
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum RedditApiError {
     #[error("Authentication failed: {reason}")]
     AuthenticationFailed { reason: String },

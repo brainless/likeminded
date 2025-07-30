@@ -48,6 +48,8 @@ impl ErrorExt for CoreError {
             CoreError::Embedding(e) => e.is_retryable(),
             CoreError::Network(_) => true,
             CoreError::Timeout { .. } => true,
+            CoreError::RateLimited { .. } => true,
+            CoreError::RequestFailed { .. } => false,
             _ => false,
         }
     }
@@ -61,6 +63,7 @@ impl ErrorExt for CoreError {
                 Some(Duration::from_secs(*retry_after))
             }
             CoreError::Timeout { seconds } => Some(Duration::from_secs(*seconds)),
+            CoreError::RateLimited { retry_after, .. } => *retry_after,
             _ if self.is_retryable() => Some(Duration::from_secs(5)), // Default retry delay
             _ => None,
         }
@@ -86,6 +89,15 @@ impl ErrorExt for CoreError {
             CoreError::PermissionDenied { operation } => {
                 format!("Permission denied for: {}", operation)
             }
+            CoreError::RateLimited { message, .. } => {
+                format!(
+                    "Rate limited: {}. Please wait before trying again.",
+                    message
+                )
+            }
+            CoreError::RequestFailed { message, .. } => {
+                format!("Request failed: {}", message)
+            }
             _ => "An unexpected error occurred. Please try again later.".to_string(),
         }
     }
@@ -105,6 +117,8 @@ impl ErrorExt for CoreError {
             CoreError::NotFound { .. } => "NOT_FOUND".to_string(),
             CoreError::PermissionDenied { .. } => "PERMISSION_DENIED".to_string(),
             CoreError::Internal { .. } => "INTERNAL".to_string(),
+            CoreError::RateLimited { .. } => "RATE_LIMITED".to_string(),
+            CoreError::RequestFailed { .. } => "REQUEST_FAILED".to_string(),
         }
     }
 }

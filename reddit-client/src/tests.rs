@@ -1,5 +1,7 @@
 #[cfg(test)]
 mod tests {
+    // Comprehensive tests integrated into this file
+
     use crate::{
         api, metrics, rate_limiter, AuthState, RedditClient, RedditOAuth2Config, RedditToken,
     };
@@ -488,5 +490,78 @@ mod tests {
         } else {
             panic!("Expected AuthenticationFailed error");
         }
+    }
+
+    // Additional comprehensive tests for enhanced coverage
+
+    #[test]
+    fn test_oauth_config_edge_cases() {
+        // Test with empty client ID (should still create client)
+        let empty_config = RedditOAuth2Config::new(
+            "".to_string(),
+            "secret".to_string(),
+            "http://localhost:8080/callback".to_string(),
+            "test/1.0".to_string(),
+        );
+
+        let result = RedditClient::new(empty_config);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_token_expiry_comprehensive() {
+        let config = create_test_config();
+        let mut client = RedditClient::new(config).unwrap();
+
+        let now = SystemTime::now();
+
+        // Test token expiring exactly at buffer time (5 minutes)
+        let buffer_expiry_token = RedditToken {
+            access_token: "buffer_token".to_string(),
+            refresh_token: Some("refresh".to_string()),
+            expires_at: now + Duration::from_secs(300), // Exactly 5 minutes
+            scope: vec!["identity".to_string()],
+        };
+
+        client.set_token(buffer_expiry_token);
+        assert!(client.is_authenticated());
+        assert!(client.needs_refresh()); // Should need refresh at 5min buffer
+    }
+
+    #[tokio::test]
+    async fn test_metrics_comprehensive() {
+        let collector = metrics::MetricsCollector::new();
+
+        // Test mixed success/failure requests
+        let requests = vec![
+            metrics::RequestMetrics {
+                endpoint: "/r/rust/hot".to_string(),
+                method: "GET".to_string(),
+                status_code: Some(200),
+                response_time: Duration::from_millis(100),
+                success: true,
+                rate_limited: false,
+                error_type: None,
+            },
+            metrics::RequestMetrics {
+                endpoint: "/r/rust/hot".to_string(),
+                method: "GET".to_string(),
+                status_code: Some(429),
+                response_time: Duration::from_millis(50),
+                success: false,
+                rate_limited: true,
+                error_type: Some("RateLimited".to_string()),
+            },
+        ];
+
+        for request in requests {
+            collector.record_request(request).await;
+        }
+
+        let metrics = collector.get_metrics().await;
+        assert_eq!(metrics.total_requests, 2);
+        assert_eq!(metrics.successful_requests, 1);
+        assert_eq!(metrics.failed_requests, 1);
+        assert_eq!(metrics.rate_limited_requests, 1);
     }
 }

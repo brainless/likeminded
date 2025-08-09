@@ -26,17 +26,20 @@ impl App {
     pub fn update(&mut self, message: Message) -> Result<(), CoreError> {
         match message {
             Message::PostClicked(_post_id) => {
-                todo!("Handle post click - open in browser")
+                // TODO: Handle post click - open in browser
+                Ok(())
             }
             Message::MarkAsRead(_post_id) => {
-                todo!("Handle mark as read")
+                // TODO: Handle mark as read
+                Ok(())
             }
             Message::FilterBySubreddit(subreddit) => {
                 self.selected_subreddit = Some(subreddit);
                 Ok(())
             }
             Message::OpenSettings => {
-                todo!("Handle settings navigation")
+                // TODO: Handle settings navigation
+                Ok(())
             }
         }
     }

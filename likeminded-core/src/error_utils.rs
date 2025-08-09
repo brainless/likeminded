@@ -85,18 +85,15 @@ impl ErrorExt for CoreError {
             CoreError::Timeout { .. } => {
                 "The operation took too long to complete. Please try again.".to_string()
             }
-            CoreError::NotFound { resource } => format!("Could not find: {}", resource),
+            CoreError::NotFound { resource } => format!("Could not find: {resource}"),
             CoreError::PermissionDenied { operation } => {
-                format!("Permission denied for: {}", operation)
+                format!("Permission denied for: {operation}")
             }
             CoreError::RateLimited { message, .. } => {
-                format!(
-                    "Rate limited: {}. Please wait before trying again.",
-                    message
-                )
+                format!("Rate limited: {message}. Please wait before trying again.",)
             }
             CoreError::RequestFailed { message, .. } => {
-                format!("Request failed: {}", message)
+                format!("Request failed: {message}")
             }
             _ => "An unexpected error occurred. Please try again later.".to_string(),
         }
@@ -159,16 +156,14 @@ impl ErrorExt for RedditApiError {
             RedditApiError::AuthenticationFailed { .. } => {
                 "Reddit authentication failed. Please check your credentials.".to_string()
             }
-            RedditApiError::RateLimitExceeded { retry_after } => format!(
-                "Too many requests. Please wait {} seconds before trying again.",
-                retry_after
-            ),
+            RedditApiError::RateLimitExceeded { retry_after } => {
+                format!("Too many requests. Please wait {retry_after} seconds before trying again.",)
+            }
             RedditApiError::Forbidden { resource } => format!(
-                "Access denied to {}. You may not have permission to view this content.",
-                resource
+                "Access denied to {resource}. You may not have permission to view this content.",
             ),
             RedditApiError::SubredditNotFound { subreddit } => {
-                format!("Subreddit '{}' not found or is private.", subreddit)
+                format!("Subreddit '{subreddit}' not found or is private.")
             }
             RedditApiError::PostNotFound { .. } => {
                 "The requested post could not be found.".to_string()
@@ -290,35 +285,28 @@ impl ErrorExt for LlmError {
 
     fn user_friendly_message(&self) -> String {
         match self {
-            LlmError::AuthenticationFailed { provider } => format!(
-                "Authentication failed for {}. Please check your API key.",
-                provider
-            ),
-            LlmError::InvalidApiKey { provider } => format!(
-                "Invalid API key for {}. Please update your credentials.",
-                provider
-            ),
+            LlmError::AuthenticationFailed { provider } => {
+                format!("Authentication failed for {provider}. Please check your API key.",)
+            }
+            LlmError::InvalidApiKey { provider } => {
+                format!("Invalid API key for {provider}. Please update your credentials.",)
+            }
             LlmError::RateLimitExceeded {
                 provider,
                 retry_after,
-            } => format!(
-                "Rate limit exceeded for {}. Please wait {} seconds.",
-                provider, retry_after
-            ),
-            LlmError::ModelNotAvailable { model } => format!(
-                "Model '{}' is not available. Please try a different model.",
-                model
-            ),
+            } => format!("Rate limit exceeded for {provider}. Please wait {retry_after} seconds.",),
+            LlmError::ModelNotAvailable { model } => {
+                format!("Model '{model}' is not available. Please try a different model.",)
+            }
             LlmError::TokenLimitExceeded { max_tokens, .. } => {
-                format!("Text is too long. Maximum {} tokens allowed.", max_tokens)
+                format!("Text is too long. Maximum {max_tokens} tokens allowed.")
             }
             LlmError::ContentFiltered { .. } => {
                 "Content was filtered by the AI provider's safety systems.".to_string()
             }
-            LlmError::ServiceUnavailable { provider } => format!(
-                "{} service is temporarily unavailable. Please try again later.",
-                provider
-            ),
+            LlmError::ServiceUnavailable { provider } => {
+                format!("{provider} service is temporarily unavailable. Please try again later.",)
+            }
             _ => "AI service error occurred. Please try again later.".to_string(),
         }
     }
@@ -368,19 +356,17 @@ impl ErrorExt for EmbeddingError {
 
     fn user_friendly_message(&self) -> String {
         match self {
-            EmbeddingError::ModelNotFound { model_name } => format!(
-                "Embedding model '{}' not found. Please download it first.",
-                model_name
-            ),
+            EmbeddingError::ModelNotFound { model_name } => {
+                format!("Embedding model '{model_name}' not found. Please download it first.",)
+            }
             EmbeddingError::ModelLoadingFailed { .. } => {
                 "Failed to load embedding model. Please try again.".to_string()
             }
-            EmbeddingError::InsufficientMemory { required_mb } => format!(
-                "Not enough memory to load model. {} MB required.",
-                required_mb
-            ),
+            EmbeddingError::InsufficientMemory { required_mb } => {
+                format!("Not enough memory to load model. {required_mb} MB required.",)
+            }
             EmbeddingError::InputTooLong { max_tokens, .. } => {
-                format!("Text is too long. Maximum {} tokens allowed.", max_tokens)
+                format!("Text is too long. Maximum {max_tokens} tokens allowed.")
             }
             EmbeddingError::DownloadFailed { .. } => {
                 "Failed to download embedding model. Please check your connection.".to_string()
@@ -435,15 +421,14 @@ impl ErrorExt for ConfigError {
                 "Configuration file format is invalid. Please check the settings.".to_string()
             }
             ConfigError::MissingField { field } => {
-                format!("Required configuration field '{}' is missing.", field)
+                format!("Required configuration field '{field}' is missing.")
             }
             ConfigError::InvalidValue { field, .. } => {
-                format!("Invalid value for configuration field '{}'.", field)
+                format!("Invalid value for configuration field '{field}'.")
             }
-            ConfigError::MissingEnvironmentVariable { var_name } => format!(
-                "Environment variable '{}' is required but not set.",
-                var_name
-            ),
+            ConfigError::MissingEnvironmentVariable { var_name } => {
+                format!("Environment variable '{var_name}' is required but not set.",)
+            }
             ConfigError::PermissionDenied { .. } => {
                 "Permission denied accessing configuration. Please check file permissions."
                     .to_string()

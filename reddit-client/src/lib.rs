@@ -12,7 +12,6 @@ use url::Url;
 
 const REDDIT_AUTH_URL: &str = "https://www.reddit.com/api/v1/authorize";
 const REDDIT_TOKEN_URL: &str = "https://www.reddit.com/api/v1/access_token";
-const REDDIT_API_BASE: &str = "https://oauth.reddit.com";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RedditToken {
@@ -64,6 +63,7 @@ pub enum AuthState {
 pub struct RedditClient {
     config: RedditOAuth2Config,
     oauth_client: BasicClient,
+    #[allow(dead_code)]
     http_client: Client,
     auth_state: AuthState,
 }
@@ -588,11 +588,14 @@ impl RedditClient {
 }
 
 pub mod api;
+#[cfg(feature = "database")]
 pub mod api_tracker;
 pub mod metrics;
 pub mod rate_limiter;
+#[cfg(feature = "database")]
 pub mod request_queue;
 pub mod retry;
+#[cfg(feature = "database")]
 pub mod usage_dashboard;
 
 #[cfg(test)]

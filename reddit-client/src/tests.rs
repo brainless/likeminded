@@ -166,7 +166,7 @@ mod tests {
 
         // Test PendingAuthorization state
         let scopes = RedditClient::get_required_scopes();
-        client.generate_auth_url(&scopes).unwrap();
+        let _result = client.generate_auth_url(&scopes).unwrap();
 
         let result = client.ensure_authenticated().await;
         assert!(result.is_err());
@@ -346,11 +346,11 @@ mod tests {
     // Tests for new post fetching functionality
     #[test]
     fn test_post_sorting_validation() {
-        let api_client = api::RedditApiClient::new("test-user-agent/1.0".to_string());
+        let _api_client = api::RedditApiClient::new("test-user-agent/1.0".to_string());
 
         // Valid sort methods should be accepted
         let valid_sorts = ["hot", "new", "top", "rising", "controversial"];
-        for sort in valid_sorts {
+        for _sort in valid_sorts {
             // This would normally make a request, but we're just testing parameter validation
             // The actual network call would fail in tests, but the parameter validation should pass
         }
@@ -358,11 +358,11 @@ mod tests {
 
     #[test]
     fn test_time_filter_validation() {
-        let api_client = api::RedditApiClient::new("test-user-agent/1.0".to_string());
+        let _api_client = api::RedditApiClient::new("test-user-agent/1.0".to_string());
 
         // Valid time filters for top/controversial sorts
         let valid_times = ["hour", "day", "week", "month", "year", "all"];
-        for time in valid_times {
+        for _time in valid_times {
             // Similar to above - testing parameter validation logic
         }
     }

@@ -41,8 +41,12 @@ fastrand = "2.0"
 # UUID generation
 uuid = { version = "1.0", features = ["v4"] }
 
-# Database
-sqlx = { workspace = true }
+# Database (conditional)
+sqlx = { workspace = true, optional = true }
+
+[features]
+default = ["database"]
+database = ["sqlx"]
 
 [dev-dependencies]
 tokio-test = "0.4"

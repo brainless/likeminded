@@ -218,12 +218,11 @@ impl RedditApiClient {
         endpoint: &str,
         access_token: &str,
         query_params: Option<&[(&str, &str)]>,
-        #[cfg_attr(not(feature = "database"), allow(unused_variables))]
-        operation_type: Option<&str>,
-        #[cfg_attr(not(feature = "database"), allow(unused_variables))]
-        subreddit: Option<&str>,
-        #[cfg_attr(not(feature = "database"), allow(unused_variables))]
-        priority: i32,
+        #[cfg_attr(not(feature = "database"), allow(unused_variables))] operation_type: Option<
+            &str,
+        >,
+        #[cfg_attr(not(feature = "database"), allow(unused_variables))] subreddit: Option<&str>,
+        #[cfg_attr(not(feature = "database"), allow(unused_variables))] priority: i32,
     ) -> Result<Response, CoreError> {
         let url = format!("{}{}", REDDIT_API_BASE, endpoint);
         let start_time = Instant::now();
@@ -277,9 +276,13 @@ impl RedditApiClient {
 
                     if response.status().as_u16() == 429 {
                         #[allow(unused_assignments)]
-                        { rate_limited = true; }
+                        {
+                            rate_limited = true;
+                        }
                         #[allow(unused_assignments)]
-                        { error_type = Some("rate_limited".to_string()); }
+                        {
+                            error_type = Some("rate_limited".to_string());
+                        }
 
                         // Extract retry-after header if present
                         if let Some(retry_after) = response.headers().get("retry-after") {
@@ -300,23 +303,31 @@ impl RedditApiClient {
                         }));
                     } else if response.status().as_u16() == 401 {
                         #[allow(unused_assignments)]
-                        { error_type = Some("unauthorized".to_string()); }
+                        {
+                            error_type = Some("unauthorized".to_string());
+                        }
                         return Err(CoreError::RedditApi(RedditApiError::InvalidToken));
                     } else if response.status().as_u16() == 403 {
                         #[allow(unused_assignments)]
-                        { error_type = Some("forbidden".to_string()); }
+                        {
+                            error_type = Some("forbidden".to_string());
+                        }
                         return Err(CoreError::RedditApi(RedditApiError::Forbidden {
                             resource: endpoint.to_string(),
                         }));
                     } else if response.status().as_u16() == 404 {
                         #[allow(unused_assignments)]
-                        { error_type = Some("not_found".to_string()); }
+                        {
+                            error_type = Some("not_found".to_string());
+                        }
                         return Err(CoreError::RedditApi(RedditApiError::InvalidResponse {
                             details: "Resource not found".to_string(),
                         }));
                     } else if response.status().is_server_error() {
                         #[allow(unused_assignments)]
-                        { error_type = Some("server_error".to_string()); }
+                        {
+                            error_type = Some("server_error".to_string());
+                        }
                         return Err(CoreError::RedditApi(RedditApiError::ServerError {
                             status_code: response.status().as_u16(),
                         }));
@@ -328,7 +339,9 @@ impl RedditApiClient {
             Err(e) => {
                 error!("Network error for {} {}: {}", method, endpoint, e);
                 #[allow(unused_assignments)]
-                { error_type = Some("network_error".to_string()); }
+                {
+                    error_type = Some("network_error".to_string());
+                }
 
                 if e.is_timeout() {
                     return Err(CoreError::RedditApi(RedditApiError::RequestTimeout));

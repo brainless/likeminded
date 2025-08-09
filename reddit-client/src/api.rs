@@ -1,3 +1,4 @@
+#[cfg(feature = "database")]
 use crate::api_tracker::ApiTracker;
 use crate::metrics::{MetricsCollector, RequestMetrics};
 use crate::rate_limiter::{RateLimitConfig, RateLimiter};
@@ -92,7 +93,11 @@ pub struct RedditApiClient {
     rate_limiter: Arc<RateLimiter>,
     metrics: Arc<MetricsCollector>,
     retry_executor: Arc<RetryExecutor>,
+    #[cfg(feature = "database")]
     api_tracker: Option<Arc<ApiTracker>>,
+    #[cfg(not(feature = "database"))]
+    #[allow(dead_code)]
+    api_tracker: Option<()>, // Stub when database feature is disabled
     user_agent: String,
 }
 
@@ -143,6 +148,7 @@ impl RedditApiClient {
         }
     }
 
+    #[cfg(feature = "database")]
     pub fn with_api_tracker(mut self, api_tracker: Arc<ApiTracker>) -> Self {
         self.api_tracker = Some(api_tracker);
         self
@@ -212,19 +218,26 @@ impl RedditApiClient {
         endpoint: &str,
         access_token: &str,
         query_params: Option<&[(&str, &str)]>,
+        #[cfg_attr(not(feature = "database"), allow(unused_variables))]
         operation_type: Option<&str>,
+        #[cfg_attr(not(feature = "database"), allow(unused_variables))]
         subreddit: Option<&str>,
+        #[cfg_attr(not(feature = "database"), allow(unused_variables))]
         priority: i32,
     ) -> Result<Response, CoreError> {
         let url = format!("{}{}", REDDIT_API_BASE, endpoint);
         let start_time = Instant::now();
         let mut success = false;
+        #[allow(unused_assignments)]
         let mut status_code = None;
+        #[allow(unused_assignments)]
         let mut error_type = None;
+        #[allow(unused_assignments)]
         let mut rate_limited = false;
 
         // Get rate limit status before request
         let rate_status_before = self.rate_limiter.get_rate_limit_status().await;
+        #[cfg_attr(not(feature = "database"), allow(unused_variables))]
         let tokens_before = rate_status_before.available_tokens;
 
         // Acquire rate limit permit
@@ -263,8 +276,10 @@ impl RedditApiClient {
                     );
 
                     if response.status().as_u16() == 429 {
-                        rate_limited = true;
-                        error_type = Some("rate_limited".to_string());
+                        #[allow(unused_assignments)]
+                        { rate_limited = true; }
+                        #[allow(unused_assignments)]
+                        { error_type = Some("rate_limited".to_string()); }
 
                         // Extract retry-after header if present
                         if let Some(retry_after) = response.headers().get("retry-after") {
@@ -284,20 +299,24 @@ impl RedditApiClient {
                             retry_after: 60,
                         }));
                     } else if response.status().as_u16() == 401 {
-                        error_type = Some("unauthorized".to_string());
+                        #[allow(unused_assignments)]
+                        { error_type = Some("unauthorized".to_string()); }
                         return Err(CoreError::RedditApi(RedditApiError::InvalidToken));
                     } else if response.status().as_u16() == 403 {
-                        error_type = Some("forbidden".to_string());
+                        #[allow(unused_assignments)]
+                        { error_type = Some("forbidden".to_string()); }
                         return Err(CoreError::RedditApi(RedditApiError::Forbidden {
                             resource: endpoint.to_string(),
                         }));
                     } else if response.status().as_u16() == 404 {
-                        error_type = Some("not_found".to_string());
+                        #[allow(unused_assignments)]
+                        { error_type = Some("not_found".to_string()); }
                         return Err(CoreError::RedditApi(RedditApiError::InvalidResponse {
                             details: "Resource not found".to_string(),
                         }));
                     } else if response.status().is_server_error() {
-                        error_type = Some("server_error".to_string());
+                        #[allow(unused_assignments)]
+                        { error_type = Some("server_error".to_string()); }
                         return Err(CoreError::RedditApi(RedditApiError::ServerError {
                             status_code: response.status().as_u16(),
                         }));
@@ -308,7 +327,8 @@ impl RedditApiClient {
             }
             Err(e) => {
                 error!("Network error for {} {}: {}", method, endpoint, e);
-                error_type = Some("network_error".to_string());
+                #[allow(unused_assignments)]
+                { error_type = Some("network_error".to_string()); }
 
                 if e.is_timeout() {
                     return Err(CoreError::RedditApi(RedditApiError::RequestTimeout));
@@ -333,6 +353,7 @@ impl RedditApiClient {
         self.metrics.record_request(request_metrics).await;
 
         // Record API call in tracker if available
+        #[cfg(feature = "database")]
         if let Some(ref tracker) = self.api_tracker {
             let rate_status_after = self.rate_limiter.get_rate_limit_status().await;
             let tokens_after = rate_status_after.available_tokens;
